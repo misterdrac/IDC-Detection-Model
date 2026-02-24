@@ -1,4 +1,4 @@
-#
+# model_gpu_embedding_CNN_changer.py
 # GPU embeddings (PyTorch backbone) + CPU LinearSVM (scikit-learn) + 5-fold CV
 # Embeddings are cached per: backbone / classifier_tag / subset_per_fold / image_size
 import os
