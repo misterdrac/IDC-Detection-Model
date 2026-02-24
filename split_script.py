@@ -77,13 +77,13 @@ def create_splits_by_patient(dataset_path, n_splits=5):
         # Intersection should be empty
         leakage = val_patients.intersection(train_patients)
         if leakage:
-            print(f"🚨 WARNING: Fold {i} has patient leakage! {len(leakage)} shared patients.")
+            print(f" WARNING: Fold {i} has patient leakage! {len(leakage)} shared patients.")
 
     # 4. Save to CSV
     output_file = 'breast_cancer_5fold_patient_splits.csv'
     df.to_csv(output_file, index=False)
 
-    print(f"\n✅ Success! Patient-split Folds saved to '{output_file}'.")
+    print(f"\n Success! Patient-split Folds saved to '{output_file}'.")
     print("Class distribution per fold:")
     for i in range(n_splits):
         fold_data = df[df['fold'] == i]
