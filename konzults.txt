@@ -1,4 +1,0 @@
-- tensorflow/pytorch s 5fold napravit da pokrije cijeli dataset jer ovaj ne pokriva cijeli set
-- paziti da prvo radimo s nebalansiranim pa zatim s balansiranim, za svaki izvrtit trening pa usporedit podatke
-- 80% 20% -> da u svakom bude omjer 60%zdravih i 40%nezdravih u svakom foldu
-- SVM, linear descriminate nest
