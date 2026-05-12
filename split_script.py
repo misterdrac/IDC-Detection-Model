@@ -5,9 +5,13 @@ import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
 
 # CONFIGURATION
-# Update this path to where you extracted the dataset
+# Default: local Windows dev path. On Linux VM prefer:
+#   export IDC_DATASET_PATH=/path/to/IDC_regular_ps50_idx5
 # Dataset structure expected: root_dir / patient_id / class (0 or 1) / image.png
-DATASET_PATH = 'D:/.Programming/datasets/IDC/data/IDC_regular_ps50_idx5'
+DATASET_PATH = os.environ.get(
+    "IDC_DATASET_PATH",
+    "D:/.Programming/datasets/IDC/data/IDC_regular_ps50_idx5",
+)
 
 
 def create_splits_by_patient(dataset_path, n_splits=5):
@@ -93,4 +97,5 @@ def create_splits_by_patient(dataset_path, n_splits=5):
 
 
 if __name__ == "__main__":
+    print(f"DATASET_PATH = {DATASET_PATH!r} (override with env IDC_DATASET_PATH)\n")
     create_splits_by_patient(DATASET_PATH)

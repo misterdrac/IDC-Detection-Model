@@ -29,15 +29,15 @@ from sklearn.metrics import (
 
 SPLITS_FILE = "breast_cancer_5fold_patient_splits.csv"
 
-IMAGE_SIZE = 96
-BATCH_SIZE = 128
-NUM_WORKERS = 6
+IMAGE_SIZE = 128
+BATCH_SIZE = 256
+NUM_WORKERS = 8
 PIN_MEMORY = True
 
 N_FOLDS = 5
 RANDOM_SEED = 42
 
-SUBSET_PER_FOLD = 35000   # stavi 10000/15000/25000/45000/55000 kako želiš
+SUBSET_PER_FOLD = 55000   # for RTX 5080 runs: start high, reduce only if needed
 
 # --- RUN TAGS (for folder + filename naming)
 BACKBONE_NAME = "convnext_tiny"    # "mobilenetv2", "efficientnet_b0", "resnet18", "resnet_50", "convnext_tiny", "inception_v3"
