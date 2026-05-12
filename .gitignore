@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+
+# Generated splits (paths are machine-specific; regenerate with split_script.py)
+breast_cancer_5fold_patient_splits.csv
+
+# Training / embedding artifacts
+checkpoints_convnext/
+embeddings/
+results_convnext/

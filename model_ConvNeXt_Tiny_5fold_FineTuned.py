@@ -44,12 +44,12 @@ class CFG:
     n_folds: int = 5
 
     # Speed/VRAM knobs
-    image_size: int = 96            # safer than 128 on 4GB VRAM
-    batch_size: int = 16            # starting batch (auto-reduces on OOM)
-    min_batch_size: int = 4
-    grad_accum_steps: int = 2       # effective batch = batch_size * accum (roughly)
+    image_size: int = 128           # better detail/throughput balance on 16GB VRAM
+    batch_size: int = 32            # starting batch for RTX 5080 16GB (auto-reduces on OOM)
+    min_batch_size: int = 8
+    grad_accum_steps: int = 1       # keep true batch high on stronger GPU
 
-    num_workers: int = 2            # Windows stability
+    num_workers: int = 8            # Linux server default, lower if dataloader contention appears
     pin_memory: bool = True
 
     # Training

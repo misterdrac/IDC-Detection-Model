@@ -29,9 +29,9 @@ from sklearn.metrics import (
 
 SPLITS_FILE = "breast_cancer_5fold_patient_splits.csv"
 
-IMAGE_SIZE = 96
-BATCH_SIZE = 128
-NUM_WORKERS = 6
+IMAGE_SIZE = 128
+BATCH_SIZE = 256
+NUM_WORKERS = 8
 PIN_MEMORY = True
 
 N_FOLDS = 5
