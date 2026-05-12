@@ -1,8 +1,49 @@
 # model_gpu_embedding_CNN_changer.py
 # GPU embeddings (PyTorch backbone) + CPU LinearSVM (scikit-learn) + 5-fold CV
 # Embeddings are cached per: backbone / classifier_tag / subset_per_fold / image_size
+#
+# CLI: defaults come from linear_vm/shared_config.py (single source for all VM runners).
+#   python model_gpu_embedding_CNN_changer.py --backbone mobilenetv2
+# Or: python linear_vm/mobilenetv2.py
+import argparse
 import os
+import sys
+from pathlib import Path
+
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+_REPO_ROOT = Path(__file__).resolve().parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+try:
+    from linear_vm.shared_config import (
+        SPLITS_FILE,
+        IMAGE_SIZE,
+        BATCH_SIZE,
+        NUM_WORKERS,
+        PIN_MEMORY,
+        N_FOLDS,
+        RANDOM_SEED,
+        SUBSET_PER_FOLD,
+        CLASSIFIER_TAG,
+        EMB_ROOT,
+        SVM_C,
+        CALIBRATION_CV,
+    )
+except ImportError:
+    SPLITS_FILE = "breast_cancer_5fold_patient_splits.csv"
+    IMAGE_SIZE = 128
+    BATCH_SIZE = 256
+    NUM_WORKERS = 8
+    PIN_MEMORY = True
+    N_FOLDS = 5
+    RANDOM_SEED = 42
+    SUBSET_PER_FOLD = 100000
+    CLASSIFIER_TAG = "linearsvc_balanced"
+    EMB_ROOT = "embeddings"
+    SVM_C = 1.0
+    CALIBRATION_CV = 2
 
 import numpy as np
 import pandas as pd
@@ -25,28 +66,8 @@ from sklearn.metrics import (
 )
 
 
-# CONFIG
-
-SPLITS_FILE = "breast_cancer_5fold_patient_splits.csv"
-
-IMAGE_SIZE = 128
-BATCH_SIZE = 256
-NUM_WORKERS = 8
-PIN_MEMORY = True
-
-N_FOLDS = 5
-RANDOM_SEED = 42
-
-SUBSET_PER_FOLD = 55000   # for RTX 5080 runs: start high, reduce only if needed
-
-# --- RUN TAGS (for folder + filename naming)
-BACKBONE_NAME = "convnext_tiny"    # "mobilenetv2", "efficientnet_b0", "resnet18", "resnet_50", "convnext_tiny", "inception_v3"
-CLASSIFIER_TAG = "linearsvc_balanced"
-EMB_ROOT = "embeddings"                # root folder for all embeddings
-
-# --- Classifier params
-SVM_C = 1.0
-CALIBRATION_CV = 2
+# Default backbone if CLI omitted; all other knobs come from linear_vm/shared_config.py.
+BACKBONE_NAME = "convnext_tiny"
 
 
 # DEVICE
@@ -98,13 +119,14 @@ class PatchDataset(Dataset):
         img = self.tfm(img)
         return img, y
 
-# ImageNet normalization (works for MobileNetV2 / EfficientNet / ResNet / VGG)
-IMG_TFM = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225]),
-])
+# ImageNet normalization (works for MobileNetV2 / EfficientNet / ResNet / VGG / ConvNeXt)
+def get_img_tfm():
+    return transforms.Compose([
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
 
 # FEATURE EXTRACTOR
@@ -211,7 +233,7 @@ def build_feature_extractor(backbone_name: str):
 
 @torch.no_grad()
 def compute_embeddings(paths, labels, extractor: nn.Module):
-    ds = PatchDataset(paths, labels, IMG_TFM)
+    ds = PatchDataset(paths, labels, get_img_tfm())
     dl = DataLoader(
         ds,
         batch_size=BATCH_SIZE,
@@ -379,5 +401,54 @@ def train_and_evaluate_cv():
         print(f"Mean PR-AUC:  {np.mean(pr_aucs):.4f} | Std: {np.std(pr_aucs):.4f}")
     print("=====================================")
 
+def _apply_cli_to_globals(args: argparse.Namespace) -> None:
+    global SPLITS_FILE, IMAGE_SIZE, BATCH_SIZE, NUM_WORKERS, PIN_MEMORY
+    global N_FOLDS, RANDOM_SEED, SUBSET_PER_FOLD, BACKBONE_NAME, CLASSIFIER_TAG, EMB_ROOT
+    global SVM_C, CALIBRATION_CV
+
+    SPLITS_FILE = args.splits_file
+    IMAGE_SIZE = args.image_size
+    BATCH_SIZE = args.batch_size
+    NUM_WORKERS = args.num_workers
+    PIN_MEMORY = args.pin_memory
+    N_FOLDS = args.n_folds
+    RANDOM_SEED = args.seed
+    SUBSET_PER_FOLD = args.subset_per_fold
+    BACKBONE_NAME = args.backbone.strip().lower()
+    CLASSIFIER_TAG = args.classifier_tag
+    EMB_ROOT = args.emb_root
+    SVM_C = args.svm_c
+    CALIBRATION_CV = args.calibration_cv
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Linear track: backbone embeddings + calibrated LinearSVC, 5-fold."
+    )
+    p.add_argument(
+        "--backbone",
+        default="convnext_tiny",
+        help="mobilenetv2 | efficientnet_b0 | resnet18 | resnet_50 | convnext_tiny | inception_v3",
+    )
+    p.add_argument("--splits-file", default=SPLITS_FILE)
+    p.add_argument("--image-size", type=int, default=IMAGE_SIZE)
+    p.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    p.add_argument("--num-workers", type=int, default=NUM_WORKERS)
+    p.add_argument("--pin-memory", action=argparse.BooleanOptionalAction, default=PIN_MEMORY)
+    p.add_argument("--n-folds", type=int, default=N_FOLDS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("--subset-per-fold", type=int, default=SUBSET_PER_FOLD)
+    p.add_argument("--classifier-tag", default=CLASSIFIER_TAG)
+    p.add_argument("--emb-root", default=EMB_ROOT)
+    p.add_argument("--svm-c", type=float, default=SVM_C)
+    p.add_argument("--calibration-cv", type=int, default=CALIBRATION_CV)
+    return p.parse_args()
+
+
 if __name__ == "__main__":
+    _apply_cli_to_globals(parse_args())
+    print(
+        f"\nLinear run -> backbone={BACKBONE_NAME} | img={IMAGE_SIZE} | batch={BATCH_SIZE} "
+        f"| workers={NUM_WORKERS} | subset_per_fold={SUBSET_PER_FOLD}\n"
+    )
     train_and_evaluate_cv()
