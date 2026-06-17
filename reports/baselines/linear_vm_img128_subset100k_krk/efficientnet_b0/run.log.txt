@@ -1,0 +1,33 @@
+Device: cuda
+GPU: NVIDIA GeForce RTX 5080
+
+Linear run -> backbone=efficientnet_b0 | img=128 | batch=256 | workers=8 | subset_per_fold=100000
+
+Loaded 277524 rows, 279 unique patients. Subset total images: 277524 | pos ratio: 28.39%
+Embeddings: embeddings/efficientnet_b0/linearsvc_balanced/subset_100000/efficientnet_b0_linearsvc_balanced_subset100000_img128.npz
+ Loaded X=(277524, 1280), y=(277524,)  [cached]
+
+======== Fold 0/4 ========
+Train: 222028 | Val: 55496
+Accuracy: 0.8571 | ROC-AUC: 0.9114 | PR-AUC: 0.8043
+
+======== Fold 1/4 ========
+Train: 221358 | Val: 56166
+Accuracy: 0.8404 | ROC-AUC: 0.8941 | PR-AUC: 0.7687
+
+======== Fold 2/4 ========
+Train: 222372 | Val: 55152
+Accuracy: 0.8433 | ROC-AUC: 0.9015 | PR-AUC: 0.7922
+
+======== Fold 3/4 ========
+Train: 222271 | Val: 55253
+Accuracy: 0.8603 | ROC-AUC: 0.9109 | PR-AUC: 0.8143
+
+======== Fold 4/4 ========
+Train: 222067 | Val: 55457
+Accuracy: 0.8610 | ROC-AUC: 0.9142 | PR-AUC: 0.8056
+
+=====================================
+FINAL CROSS-VALIDATION SUMMARY
+Mean Acc: 0.8524 | Mean ROC-AUC: 0.9064 | Mean PR-AUC: 0.7970
+=====================================

@@ -1,0 +1,15 @@
+{
+  "run": "linear_vm/resnet_50",
+  "environment": {"device": "cuda", "gpu": "NVIDIA GeForce RTX 5080"},
+  "notes": "Embeddings computed in this run (weights downloaded).",
+  "config": {"image_size": 128, "batch_size": 256, "workers": 8, "subset_per_fold": 100000, "svm_c": 1.0, "calibration_cv": 2},
+  "data": {"rows": 277524, "patients": 279, "embedding_dim": 2048, "embedding_cache": "embeddings/resnet_50/linearsvc_balanced/subset_100000/resnet_50_linearsvc_balanced_subset100000_img128.npz"},
+  "folds": [
+    {"fold": 0, "accuracy": 0.872, "roc_auc": 0.9226, "pr_auc": 0.8367},
+    {"fold": 1, "accuracy": 0.8515, "roc_auc": 0.9077, "pr_auc": 0.7989},
+    {"fold": 2, "accuracy": 0.8592, "roc_auc": 0.9181, "pr_auc": 0.8247},
+    {"fold": 3, "accuracy": 0.8702, "roc_auc": 0.9231, "pr_auc": 0.8311},
+    {"fold": 4, "accuracy": 0.873, "roc_auc": 0.9255, "pr_auc": 0.8345}
+  ],
+  "summary_mean_std": {"accuracy": {"mean": 0.8652, "std": 0.0084}, "roc_auc": {"mean": 0.9194, "std": 0.0063}, "pr_auc": {"mean": 0.8252, "std": 0.0138}}
+}

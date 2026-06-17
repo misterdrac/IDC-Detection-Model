@@ -1,0 +1,28 @@
+Device: cuda
+GPU: NVIDIA GeForce RTX 5080
+
+Linear run -> backbone=mobilenetv2 | img=128 | batch=256 | workers=8 | subset_per_fold=100000
+
+Loaded 277524 rows, 279 unique patients.
+Embeddings cached: embeddings/mobilenetv2/linearsvc_balanced/subset_100000/mobilenetv2_linearsvc_balanced_subset100000_img128.npz
+ Loaded X=(277524, 1280), y=(277524,)
+
+======== Fold 0/4 ========
+Accuracy: 0.8651 | ROC-AUC: 0.9189 | PR-AUC: 0.8252
+
+======== Fold 1/4 ========
+Accuracy: 0.8428 | ROC-AUC: 0.8953 | PR-AUC: 0.7721
+
+======== Fold 2/4 ========
+Accuracy: 0.8537 | ROC-AUC: 0.9121 | PR-AUC: 0.8122
+
+======== Fold 3/4 ========
+Accuracy: 0.8666 | ROC-AUC: 0.9177 | PR-AUC: 0.8206
+
+======== Fold 4/4 ========
+Accuracy: 0.8698 | ROC-AUC: 0.9225 | PR-AUC: 0.8269
+
+=====================================
+FINAL CROSS-VALIDATION SUMMARY
+Mean Acc: 0.8596 | Mean ROC-AUC: 0.9133 | Mean PR-AUC: 0.8114
+=====================================

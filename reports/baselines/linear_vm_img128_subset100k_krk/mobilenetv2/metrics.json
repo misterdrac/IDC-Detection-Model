@@ -1,0 +1,15 @@
+{
+  "run": "linear_vm/mobilenetv2",
+  "environment": {"device": "cuda", "gpu": "NVIDIA GeForce RTX 5080"},
+  "notes": "Embeddings loaded from cache (subset 100k cap; full folds ~55k each).",
+  "config": {"image_size": 128, "batch_size": 256, "workers": 8, "subset_per_fold": 100000, "svm_c": 1.0, "calibration_cv": 2},
+  "data": {"rows": 277524, "patients": 279, "embedding_dim": 1280, "embedding_cache": "embeddings/mobilenetv2/linearsvc_balanced/subset_100000/mobilenetv2_linearsvc_balanced_subset100000_img128.npz"},
+  "folds": [
+    {"fold": 0, "accuracy": 0.8651, "roc_auc": 0.9189, "pr_auc": 0.8252},
+    {"fold": 1, "accuracy": 0.8428, "roc_auc": 0.8953, "pr_auc": 0.7721},
+    {"fold": 2, "accuracy": 0.8537, "roc_auc": 0.9121, "pr_auc": 0.8122},
+    {"fold": 3, "accuracy": 0.8666, "roc_auc": 0.9177, "pr_auc": 0.8206},
+    {"fold": 4, "accuracy": 0.8698, "roc_auc": 0.9225, "pr_auc": 0.8269}
+  ],
+  "summary_mean_std": {"accuracy": {"mean": 0.8596, "std": 0.01}, "roc_auc": {"mean": 0.9133, "std": 0.0096}, "pr_auc": {"mean": 0.8114, "std": 0.0203}}
+}

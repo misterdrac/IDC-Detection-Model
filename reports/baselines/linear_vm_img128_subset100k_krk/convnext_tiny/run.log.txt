@@ -1,0 +1,28 @@
+Device: cuda
+GPU: NVIDIA GeForce RTX 5080
+
+Linear run -> backbone=convnext_tiny | img=128 | batch=256 | workers=8 | subset_per_fold=100000
+
+Loaded 277524 rows, 279 unique patients. Subset total images: 277524 | pos ratio: 28.39%
+Embeddings: embeddings/convnext_tiny/linearsvc_balanced/subset_100000/convnext_tiny_linearsvc_balanced_subset100000_img128.npz
+ Loaded X=(277524, 768), y=(277524,)  [cached]
+
+======== Fold 0/4 ========
+Accuracy: 0.8770 | ROC-AUC: 0.9332 | PR-AUC: 0.8487
+
+======== Fold 1/4 ========
+Accuracy: 0.8522 | ROC-AUC: 0.9083 | PR-AUC: 0.8038
+
+======== Fold 2/4 ========
+Accuracy: 0.8657 | ROC-AUC: 0.9279 | PR-AUC: 0.8414
+
+======== Fold 3/4 ========
+Accuracy: 0.8748 | ROC-AUC: 0.9297 | PR-AUC: 0.8448
+
+======== Fold 4/4 ========
+Accuracy: 0.8808 | ROC-AUC: 0.9329 | PR-AUC: 0.8559
+
+=====================================
+FINAL CROSS-VALIDATION SUMMARY
+Mean Acc: 0.8701 | Mean ROC-AUC: 0.9264 | Mean PR-AUC: 0.8389
+=====================================

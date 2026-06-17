@@ -10,10 +10,16 @@ env/
 # IDE
 .idea/
 
-# Generated splits (paths are machine-specific; regenerate with split_script.py)
+# Generated splits (paths are machine-specific; regenerate with src/data/split.py)
 breast_cancer_5fold_patient_splits.csv
 
 # Training / embedding artifacts
 checkpoints_convnext/
 embeddings/
 results_convnext/
+
+# Experiment run artifacts (full per-run logs on VM)
+experiments/results/
+experiments/manifest.jsonl
+
+# reports/ — KEEP in repo as baseline reference (see reports/README.md)

@@ -1,0 +1,14 @@
+{
+  "run": "linear_vm/efficientnet_b0",
+  "environment": {"device": "cuda", "gpu": "NVIDIA GeForce RTX 5080"},
+  "config": {"image_size": 128, "batch_size": 256, "workers": 8, "subset_per_fold": 100000, "svm_c": 1.0, "calibration_cv": 2},
+  "data": {"rows": 277524, "patients": 279, "embedding_dim": 1280, "embedding_cache": "embeddings/efficientnet_b0/linearsvc_balanced/subset_100000/efficientnet_b0_linearsvc_balanced_subset100000_img128.npz"},
+  "folds": [
+    {"fold": 0, "accuracy": 0.8571, "roc_auc": 0.9114, "pr_auc": 0.8043},
+    {"fold": 1, "accuracy": 0.8404, "roc_auc": 0.8941, "pr_auc": 0.7687},
+    {"fold": 2, "accuracy": 0.8433, "roc_auc": 0.9015, "pr_auc": 0.7922},
+    {"fold": 3, "accuracy": 0.8603, "roc_auc": 0.9109, "pr_auc": 0.8143},
+    {"fold": 4, "accuracy": 0.861, "roc_auc": 0.9142, "pr_auc": 0.8056}
+  ],
+  "summary_mean_std": {"accuracy": {"mean": 0.8524, "std": 0.0088}, "roc_auc": {"mean": 0.9064, "std": 0.0075}, "pr_auc": {"mean": 0.797, "std": 0.0158}}
+}

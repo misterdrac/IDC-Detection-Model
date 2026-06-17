@@ -1,0 +1,26 @@
+Device: cuda
+GPU: NVIDIA GeForce RTX 5080
+
+Linear run -> backbone=resnet_50 | img=128 | batch=256 | workers=8 | subset_per_fold=100000
+
+Embeddings computed this run. X shape: (277524, 2048)
+
+======== Fold 0/4 ========
+Accuracy: 0.8720 | ROC-AUC: 0.9226 | PR-AUC: 0.8367
+
+======== Fold 1/4 ========
+Accuracy: 0.8515 | ROC-AUC: 0.9077 | PR-AUC: 0.7989
+
+======== Fold 2/4 ========
+Accuracy: 0.8592 | ROC-AUC: 0.9181 | PR-AUC: 0.8247
+
+======== Fold 3/4 ========
+Accuracy: 0.8702 | ROC-AUC: 0.9231 | PR-AUC: 0.8311
+
+======== Fold 4/4 ========
+Accuracy: 0.8730 | ROC-AUC: 0.9255 | PR-AUC: 0.8345
+
+=====================================
+FINAL CROSS-VALIDATION SUMMARY
+Mean Acc: 0.8652 | Mean ROC-AUC: 0.9194 | Mean PR-AUC: 0.8252
+=====================================

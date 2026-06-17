@@ -1,0 +1,14 @@
+{
+  "run": "linear_vm/convnext_tiny",
+  "environment": {"device": "cuda", "gpu": "NVIDIA GeForce RTX 5080"},
+  "config": {"image_size": 128, "batch_size": 256, "workers": 8, "subset_per_fold": 100000, "svm_c": 1.0, "calibration_cv": 2},
+  "data": {"rows": 277524, "patients": 279, "embedding_dim": 768, "embedding_cache": "embeddings/convnext_tiny/linearsvc_balanced/subset_100000/convnext_tiny_linearsvc_balanced_subset100000_img128.npz"},
+  "folds": [
+    {"fold": 0, "accuracy": 0.877, "roc_auc": 0.9332, "pr_auc": 0.8487},
+    {"fold": 1, "accuracy": 0.8522, "roc_auc": 0.9083, "pr_auc": 0.8038},
+    {"fold": 2, "accuracy": 0.8657, "roc_auc": 0.9279, "pr_auc": 0.8414},
+    {"fold": 3, "accuracy": 0.8748, "roc_auc": 0.9297, "pr_auc": 0.8448},
+    {"fold": 4, "accuracy": 0.8808, "roc_auc": 0.9329, "pr_auc": 0.8559}
+  ],
+  "summary_mean_std": {"accuracy": {"mean": 0.8701, "std": 0.0103}, "roc_auc": {"mean": 0.9264, "std": 0.0093}, "pr_auc": {"mean": 0.8389, "std": 0.0182}}
+}

@@ -1,0 +1,28 @@
+Device: cuda
+GPU: NVIDIA GeForce RTX 5080
+
+Linear run -> backbone=resnet18 | img=128 | batch=256 | workers=8 | subset_per_fold=100000
+
+Loaded 277524 rows, 279 unique patients.
+Embeddings cached: embeddings/resnet18/linearsvc_balanced/subset_100000/resnet18_linearsvc_balanced_subset100000_img128.npz
+ Loaded X=(277524, 512), y=(277524,)
+
+======== Fold 0/4 ========
+Accuracy: 0.8557 | ROC-AUC: 0.9070 | PR-AUC: 0.8020
+
+======== Fold 1/4 ========
+Accuracy: 0.8384 | ROC-AUC: 0.8879 | PR-AUC: 0.7553
+
+======== Fold 2/4 ========
+Accuracy: 0.8411 | ROC-AUC: 0.8990 | PR-AUC: 0.7819
+
+======== Fold 3/4 ========
+Accuracy: 0.8598 | ROC-AUC: 0.9096 | PR-AUC: 0.7927
+
+======== Fold 4/4 ========
+Accuracy: 0.8660 | ROC-AUC: 0.9155 | PR-AUC: 0.8127
+
+=====================================
+FINAL CROSS-VALIDATION SUMMARY
+Mean Acc: 0.8522 | Mean ROC-AUC: 0.9038 | Mean PR-AUC: 0.7889
+=====================================

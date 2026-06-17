@@ -1,0 +1,14 @@
+{
+  "run": "linear_vm/resnet18",
+  "environment": {"device": "cuda", "gpu": "NVIDIA GeForce RTX 5080"},
+  "config": {"image_size": 128, "batch_size": 256, "workers": 8, "subset_per_fold": 100000, "svm_c": 1.0, "calibration_cv": 2},
+  "data": {"rows": 277524, "patients": 279, "embedding_dim": 512, "embedding_cache": "embeddings/resnet18/linearsvc_balanced/subset_100000/resnet18_linearsvc_balanced_subset100000_img128.npz"},
+  "folds": [
+    {"fold": 0, "accuracy": 0.8557, "roc_auc": 0.907, "pr_auc": 0.802},
+    {"fold": 1, "accuracy": 0.8384, "roc_auc": 0.8879, "pr_auc": 0.7553},
+    {"fold": 2, "accuracy": 0.8411, "roc_auc": 0.899, "pr_auc": 0.7819},
+    {"fold": 3, "accuracy": 0.8598, "roc_auc": 0.9096, "pr_auc": 0.7927},
+    {"fold": 4, "accuracy": 0.866, "roc_auc": 0.9155, "pr_auc": 0.8127}
+  ],
+  "summary_mean_std": {"accuracy": {"mean": 0.8522, "std": 0.0107}, "roc_auc": {"mean": 0.9038, "std": 0.0095}, "pr_auc": {"mean": 0.7889, "std": 0.0197}}
+}
