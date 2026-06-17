@@ -22,4 +22,12 @@ results_convnext/
 experiments/results/
 experiments/manifest.jsonl
 
-# reports/ — KEEP in repo as baseline reference (see reports/README.md)
+# reports/ — baselines committed; per-phase comparison_latest stays on VM
+reports/experiments/**/comparison_latest.csv
+reports/experiments/**/comparison_latest.json
+
+# Local notes (not required on VM)
+.docs/AGENDA.md
+THESIS_WORKBOOK.md
+PHASE1_SUMMARY.md
+PHASE2_FT_GUIDE.md

@@ -5,15 +5,21 @@
 # - AMP (new torch.amp API)
 # - class imbalance handling via pos_weight (BCEWithLogitsLoss)
 # - per-fold metrics + final summary
-# Run:  python train_convnext_tiny_5fold_lite.py
+# Run:  python3 src/cnn/convnext_5fold_ft.py
 
 import os
 import gc
+import sys
 import time
 import json
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Tuple, List
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import pandas as pd
@@ -37,6 +43,7 @@ from sklearn.metrics import (
 
 
 # CONFIG (edit here - no CLI args)
+# Phase 2 — Korak 0 (Blok A): lite FT schedule @ 224 (see PHASE2_FT_GUIDE.md)
 
 @dataclass
 class CFG:
@@ -44,24 +51,22 @@ class CFG:
     n_folds: int = 5
 
     # Speed/VRAM knobs
-    image_size: int = 128           # better detail/throughput balance on 16GB VRAM
-    batch_size: int = 32            # starting batch for RTX 5080 16GB (auto-reduces on OOM)
+    image_size: int = 224           # Korak 0: 224 (was 128 in FT0 baseline)
+    batch_size: int = 32            # RTX 5080 16GB; auto-reduces on OOM
     min_batch_size: int = 8
-    grad_accum_steps: int = 1       # keep true batch high on stronger GPU
+    grad_accum_steps: int = 1
 
-    num_workers: int = 8            # Linux server default, lower if dataloader contention appears
+    num_workers: int = 8
     pin_memory: bool = True
 
     # Training
     seed: int = 42
     amp: bool = True
 
-    # Quick finetune plan:
-    # - train head for head_epochs
-    # - optionally finetune last stage for ft_epochs
+    # Lite schedule (same as FT0 baseline, only image_size changed)
     head_epochs: int = 2
     ft_epochs: int = 1
-    finetune_last_stage: bool = True  # last stage only (still light)
+    finetune_last_stage: bool = True
 
     # Optimizer
     lr_head: float = 1e-3
@@ -72,15 +77,54 @@ class CFG:
     threshold: float = 0.5
     eval_every: int = 1             # evaluate every epoch (keep 1 for clear logs)
 
-    # Output
-    out_dir: str = "results_convnext"
-    ckpt_dir: str = "checkpoints_convnext"
+    # Output — use_experiment_dirs=True → experiments/results/phase2_deep_ft/<run_id>/
+    use_experiment_dirs: bool = True
+    phase: str = "phase2_deep_ft"
+    run_tag: str = "korak0_img224"   # label in folder name (change per PHASE2_FT_GUIDE step)
+    out_dir: str = ""                # legacy override; empty = auto
+    ckpt_dir: str = ""               # legacy override; empty = auto
 
     # Heartbeat
     heartbeat_sec: int = 15
 
 
 cfg = CFG()
+
+
+def resolve_output_dirs(c: CFG) -> tuple[str, str, str | None]:
+    """Return (out_dir, ckpt_dir, run_id)."""
+    if not c.use_experiment_dirs:
+        return c.out_dir or "results_convnext", c.ckpt_dir or "checkpoints_convnext", None
+
+    from experiments.lib.experiment_paths import ensure_phase_dirs, make_ft_run_id, run_dir
+
+    ensure_phase_dirs(c.phase)
+    run_id = make_ft_run_id(c.phase, c.run_tag, c.image_size)
+    base = run_dir(c.phase, run_id)
+    ckpt = base / "checkpoints"
+    base.mkdir(parents=True, exist_ok=True)
+    ckpt.mkdir(parents=True, exist_ok=True)
+    return str(base), str(ckpt), run_id
+
+
+def _append_manifest_entry(run_id: str, summary: dict) -> None:
+    from experiments.lib.experiment_paths import MANIFEST_PATH
+    from experiments.lib.log_run import append_manifest, utc_now_iso
+
+    m = summary.get("metrics_mean_std", {})
+    append_manifest(
+        {
+            "phase": cfg.phase,
+            "run_id": run_id,
+            "started_via": "src/cnn/convnext_5fold_ft.py",
+            "finished_at_utc": utc_now_iso(),
+            "run_tag": cfg.run_tag,
+            "image_size": cfg.image_size,
+            "summary": m,
+            "artifacts_dir": f"experiments/results/{cfg.phase}/{run_id}",
+        },
+        MANIFEST_PATH,
+    )
 
 
 # FORCE GPU
@@ -499,6 +543,11 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
 # MAIN
 
 def main():
+    global cfg
+    out_dir, ckpt_dir, run_id = resolve_output_dirs(cfg)
+    cfg.out_dir = out_dir
+    cfg.ckpt_dir = ckpt_dir
+
     os.makedirs(cfg.out_dir, exist_ok=True)
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
@@ -521,6 +570,8 @@ def main():
     print(f"head_epochs={cfg.head_epochs} | ft_epochs={cfg.ft_epochs} | finetune_last_stage={cfg.finetune_last_stage}")
     print(f"lr_head={cfg.lr_head} | lr_backbone={cfg.lr_backbone} | wd={cfg.weight_decay}")
     print(f"amp={cfg.amp} | workers={cfg.num_workers} | threshold={cfg.threshold}")
+    if run_id:
+        print(f"Run ID : {run_id}")
     print("Output:", cfg.out_dir, "| CKPT:", cfg.ckpt_dir)
 
     start = time.time()
@@ -555,21 +606,43 @@ def main():
 
     csv_out = os.path.join(cfg.out_dir, f"convnext_tiny_5fold_img{cfg.image_size}.csv")
     out_df.to_csv(csv_out, index=False)
+    out_df.to_csv(os.path.join(cfg.out_dir, "metrics.csv"), index=False)
 
     summary_out = os.path.join(cfg.out_dir, f"convnext_tiny_5fold_img{cfg.image_size}_summary.json")
     summary = {
+        "run_id": run_id,
+        "run_tag": cfg.run_tag,
+        "phase": cfg.phase,
         "model": "convnext_tiny_binary",
         "config": cfg.__dict__,
         "results_csv": csv_out,
         "metrics_mean_std": {c: {"mean": float(out_df[c].mean()), "std": float(out_df[c].std(ddof=0))} for c in cols},
         "runtime_min": float(runtime_min),
-        "fold_rows": rows
+        "fold_rows": rows,
     }
     with open(summary_out, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+    with open(os.path.join(cfg.out_dir, "metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    summary_row = {
+        "roc_auc_mean": summary["metrics_mean_std"]["roc_auc"]["mean"],
+        "pr_auc_mean": summary["metrics_mean_std"]["pr_auc"]["mean"],
+        "accuracy_mean": summary["metrics_mean_std"]["accuracy"]["mean"],
+        "roc_auc_std": summary["metrics_mean_std"]["roc_auc"]["std"],
+        "pr_auc_std": summary["metrics_mean_std"]["pr_auc"]["std"],
+        "accuracy_std": summary["metrics_mean_std"]["accuracy"]["std"],
+    }
+    pd.DataFrame([summary_row]).to_csv(os.path.join(cfg.out_dir, "summary.csv"), index=False)
+
+    if run_id:
+        _append_manifest_entry(run_id, summary)
 
     print("\nSaved CSV :", csv_out)
     print("Saved JSON:", summary_out)
+    print("Metrics   :", os.path.join(cfg.out_dir, "metrics.csv"), "|", os.path.join(cfg.out_dir, "metrics.json"))
+    if run_id:
+        print("Aggregate : python3 experiments/phase2_deep_ft/aggregate_results.py")
     print("Done ")
 
 if __name__ == "__main__":

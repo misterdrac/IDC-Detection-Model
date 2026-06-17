@@ -21,6 +21,13 @@ def make_run_id(phase: str, backbone: str, train_balance: str, class_weight: str
     return f"{phase}_{backbone}_{train_balance}_cw{class_weight}_{ts}"
 
 
+def make_ft_run_id(phase: str, tag: str, image_size: int) -> str:
+    """Run id for CNN fine-tune (phase2_deep_ft)."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    safe_tag = tag.replace(" ", "_") if tag else f"img{image_size}"
+    return f"{phase}_convnext_tiny_{safe_tag}_{ts}"
+
+
 def run_dir(phase: str, run_id: str) -> Path:
     return RESULTS_ROOT / phase / run_id
 

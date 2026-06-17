@@ -2,7 +2,7 @@
 
 Breast histopathology pipeline for **invasive ductal carcinoma (IDC)** detection: patient-level 5-fold CV, linear embeddings + SVM, and ConvNeXt-Tiny fine-tuning.
 
-**Plan, VM workflow, git policy:** [`.docs/AGENDA.md`](.docs/AGENDA.md)
+**VM workflow:** `experiments/README.md` and per-phase READMEs. Local plan: `.docs/AGENDA.md` (gitignored).
 
 ---
 
@@ -31,8 +31,7 @@ python3 runners/phase1_balance.py                 # phase 1: all backbones × na
 │   ├── phase1_balance.sh
 │   └── linear_vm/                # one script per backbone + shared_config.py
 ├── experiments/                  # study orchestration (phase 1, phase 2, lib)
-├── reports/                      # committed baseline results + experiment summaries
-└── .docs/AGENDA.md
+├── reports/                      # committed baselines; experiment summaries stay on VM
 ```
 
 | Path | Role |
