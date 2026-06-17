@@ -40,6 +40,7 @@ from experiments.lib.experiment_paths import (
     run_dir,
 )
 from experiments.lib.log_run import append_manifest, save_json, utc_now_iso
+from experiments.lib.progress_pct import report_pct
 
 PHASE = "phase1_balance"
 MAIN_SCRIPT = REPO_ROOT / "src" / "linear" / "embedding_svc.py"
@@ -61,6 +62,26 @@ DEFAULT_CONDITIONS = [
 
 # Optional: prior VM baseline (natural data + sklearn balanced weights)
 LEGACY_CONDITION = ("natural", "balanced")
+
+
+def _stream_subprocess(cmd: list[str], cwd: Path, log_path: Path) -> int:
+    """Run child process; mirror stdout to terminal and log file."""
+    with log_path.open("w", encoding="utf-8") as logf:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            logf.write(line)
+        logf.flush()
+        return proc.wait()
 
 
 def _import_shared_config():
@@ -102,6 +123,8 @@ def run_one(
         str(sc.SUBSET_PER_FOLD),
         "--classifier-tag",
         f"linearsvc_{train_balance}_cw{class_weight}",
+        "--classifier-backend",
+        sc.CLASSIFIER_BACKEND,
         "--emb-root",
         sc.EMB_ROOT,
         "--svm-c",
@@ -125,16 +148,9 @@ def run_one(
         return None
 
     out.mkdir(parents=True, exist_ok=True)
-    with log_path.open("w", encoding="utf-8") as logf:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(REPO_ROOT),
-            stdout=logf,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Run failed ({proc.returncode}): {run_id} — see {log_path}")
+    rc = _stream_subprocess(cmd, REPO_ROOT, log_path)
+    if rc != 0:
+        raise RuntimeError(f"Run failed ({rc}): {run_id} — see {log_path}")
 
     metrics_path = out / "metrics.json"
     if not metrics_path.is_file():
@@ -198,8 +214,16 @@ def main() -> None:
         conditions.append(LEGACY_CONDITION)
 
     rows: list[dict] = []
+    total_jobs = len(backbones) * len(conditions)
+    phase_state: dict = {}
+    job_idx = 0
+
     for backbone in backbones:
         for train_balance, class_weight in conditions:
+            job_idx += 1
+            job_label = f"Phase1 {backbone}|{train_balance}"
+            print(f"\nPhase1 job {job_idx}/{total_jobs}: {backbone} ({train_balance})", flush=True)
+            report_pct(job_label, 0, 100, phase_state)
             result = run_one(
                 backbone,
                 train_balance,
@@ -208,6 +232,9 @@ def main() -> None:
             )
             if result:
                 rows.append(build_comparison_row(result))
+            if not args.dry_run:
+                report_pct(job_label, 100, 100, phase_state)
+                report_pct("Phase1 total", job_idx, total_jobs, phase_state)
 
     if args.dry_run:
         print(f"\nDry run: would execute {len(backbones) * len(conditions)} jobs.")

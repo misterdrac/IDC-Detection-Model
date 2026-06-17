@@ -82,6 +82,8 @@ New phase 1 outputs land under `experiments/results/` on the VM; copy summaries 
 | `natural` | full fold | `none` |
 | `balanced` | undersample to 50/50 | `none` |
 
+Linear track on CUDA uses **GPU for embeddings + GPU linear head** (`classifier_backend=torch`, default `auto` on VM). Only `split.py` stays on CPU (seconds).
+
 Backbones: mobilenetv2, resnet18, efficientnet_b0, convnext_tiny, resnet_50, inception_v3.
 
 **Run on VM:**

@@ -15,6 +15,7 @@ RANDOM_SEED = 42
 SUBSET_PER_FOLD = 100_000
 CLASSIFIER_TAG = "linearsvc_balanced"
 EMB_ROOT = "embeddings"
+CLASSIFIER_BACKEND = "auto"  # auto → torch on CUDA, sklearn on CPU
 SVM_C = 1.0
 CALIBRATION_CV = 2
 
@@ -38,6 +39,8 @@ def vm_cli_args() -> list[str]:
         str(SUBSET_PER_FOLD),
         "--classifier-tag",
         CLASSIFIER_TAG,
+        "--classifier-backend",
+        CLASSIFIER_BACKEND,
         "--emb-root",
         EMB_ROOT,
         "--svm-c",

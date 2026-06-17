@@ -47,7 +47,6 @@ except ImportError:
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -65,11 +64,27 @@ from sklearn.metrics import (
     average_precision_score
 )
 
+try:
+    from experiments.lib.balance import balance_train_arrays
+except ImportError:
+    balance_train_arrays = None
+
+try:
+    from experiments.lib.progress_pct import report_pct
+except ImportError:
+    from progress_pct import report_pct  # type: ignore[no-redef]
+
+try:
+    from src.linear.gpu_head import fit_predict_gpu_linear
+except ImportError:
+    from linear.gpu_head import fit_predict_gpu_linear  # type: ignore[no-redef]
+
 
 # Default backbone if CLI omitted; other knobs from linear_vm/shared_config.py or CLI.
 BACKBONE_NAME = "convnext_tiny"
 TRAIN_BALANCE = "natural"  # natural | balanced (train undersampling; val stays natural)
 CLASS_WEIGHT_MODE = "balanced"  # none | balanced (LinearSVC class_weight)
+CLASSIFIER_BACKEND = "auto"  # auto | torch | sklearn
 OUTPUT_DIR = ""
 
 
@@ -246,7 +261,7 @@ def build_feature_extractor(backbone_name: str):
 # EMBEDDING CACHE
 
 @torch.no_grad()
-def compute_embeddings(paths, labels, extractor: nn.Module):
+def compute_embeddings(paths, labels, extractor: nn.Module, progress_label: str, progress_state: dict):
     ds = PatchDataset(paths, labels, get_img_tfm())
     dl = DataLoader(
         ds,
@@ -259,12 +274,14 @@ def compute_embeddings(paths, labels, extractor: nn.Module):
 
     X_list = []
     y_list = []
+    n_batches = len(dl)
 
-    for imgs, ys in tqdm(dl, desc="Embedding (GPU)" if DEVICE.type == "cuda" else "Embedding (CPU)"):
+    for batch_idx, (imgs, ys) in enumerate(dl):
         imgs = imgs.to(DEVICE, non_blocking=True)
-        feats = extractor(imgs)               # (B, D)
+        feats = extractor(imgs)
         X_list.append(feats.cpu().numpy())
         y_list.append(ys.numpy())
+        report_pct(progress_label, batch_idx + 1, n_batches, progress_state)
 
     X = np.concatenate(X_list, axis=0)
     y = np.concatenate(y_list, axis=0).astype(np.int32)
@@ -278,18 +295,18 @@ def make_subset_per_fold(df: pd.DataFrame):
     out = pd.concat(parts, ignore_index=True)
     return out
 
-def precompute_and_save_embeddings(df: pd.DataFrame, out_file: str):
+def precompute_and_save_embeddings(df: pd.DataFrame, out_file: str, progress_label: str, progress_state: dict):
     paths = df["path"].astype(str).values
     labels = df["target"].astype(np.int32).values
     folds = df["fold"].astype(np.int32).values
 
     extractor = build_feature_extractor(BACKBONE_NAME)
 
-    print(f"🚀 Precomputing embeddings for subset: {len(paths)} images")
-    X, y = compute_embeddings(paths, labels, extractor)
+    print(f"Precomputing embeddings for subset: {len(paths)} images")
+    X, y = compute_embeddings(paths, labels, extractor, progress_label, progress_state)
 
     np.savez_compressed(out_file, X=X, y=y, fold=folds)
-    print(f"✅ Saved embeddings: {out_file}")
+    print(f"Saved embeddings: {out_file}")
     print(f"   X shape: {X.shape} | y shape: {y.shape} | fold shape: {folds.shape}")
 
 
@@ -325,12 +342,21 @@ def _save_run_artifacts(result: dict) -> None:
         pd.DataFrame([flat]).to_csv(out / "summary.csv", index=False)
 
 
-def train_and_evaluate_cv() -> dict:
-    try:
-        from experiments.lib.balance import balance_train_arrays
-    except ImportError:
-        balance_train_arrays = None  # type: ignore
+def _resolve_classifier_backend() -> str:
+    if CLASSIFIER_BACKEND == "auto":
+        return "torch" if DEVICE.type == "cuda" else "sklearn"
+    if CLASSIFIER_BACKEND not in ("torch", "sklearn"):
+        raise ValueError(f"Unknown classifier backend: {CLASSIFIER_BACKEND!r}")
+    if CLASSIFIER_BACKEND == "torch" and DEVICE.type != "cuda":
+        raise RuntimeError("--classifier-backend torch requires CUDA.")
+    return CLASSIFIER_BACKEND
 
+
+def _progress_prefix() -> str:
+    return f"[{BACKBONE_NAME}|{TRAIN_BALANCE}]"
+
+
+def train_and_evaluate_cv() -> dict:
     df = pd.read_csv(SPLITS_FILE)
 
     required_cols = {"path", "patient_id", "target", "fold"}
@@ -351,8 +377,12 @@ def train_and_evaluate_cv() -> dict:
 
     print(f"\nRun config -> backbone={BACKBONE_NAME} | classifier_tag={CLASSIFIER_TAG}")
     print(f"  train_balance={TRAIN_BALANCE} | class_weight={CLASS_WEIGHT_MODE}")
+    backend = _resolve_classifier_backend()
+    print(f"  classifier_backend={backend}")
     print(f"  subset_per_fold={SUBSET_PER_FOLD} | img={IMAGE_SIZE}")
-    print(f"Embeddings path -> {get_emb_path()}")
+
+    progress_state: dict = {}
+    prefix = _progress_prefix()
 
     print(f"\nUsing subset-per-fold: {SUBSET_PER_FOLD} (or max available).")
     print("Subset fold counts:")
@@ -362,16 +392,18 @@ def train_and_evaluate_cv() -> dict:
 
     # embeddings cache
     emb_path = _resolve_emb_cache()
+    embed_label = f"{prefix} embedding"
     if os.path.exists(emb_path):
-        print(f"\n Loading cached embeddings from {emb_path} ...")
+        print(f"\nLoading cached embeddings from {emb_path} ...")
+        report_pct(embed_label, 100, 100, progress_state)
         data = np.load(emb_path)
         X_all = data["X"]
         y_all = data["y"]
         fold_all = data["fold"]
         print(f" Loaded X={X_all.shape}, y={y_all.shape}")
     else:
-        print(f"\n Cache not found. Creating: {emb_path}")
-        precompute_and_save_embeddings(df, emb_path)
+        print(f"\nCache not found. Creating: {emb_path}")
+        precompute_and_save_embeddings(df, emb_path, embed_label, progress_state)
         data = np.load(emb_path)
         X_all = data["X"]
         y_all = data["y"]
@@ -381,7 +413,9 @@ def train_and_evaluate_cv() -> dict:
     fold_metrics = []
 
     for fold in range(N_FOLDS):
-        print(f"\n======== Fold {fold}/{N_FOLDS-1} ========")
+        fold_label = f"{prefix} fold {fold + 1}/{N_FOLDS}"
+        clf_label = f"{fold_label} classifier"
+        print(f"\n======== Fold {fold}/{N_FOLDS - 1} ========")
 
         train_mask = fold_all != fold
         val_mask = fold_all == fold
@@ -400,23 +434,38 @@ def train_and_evaluate_cv() -> dict:
             print(f"Balanced train: {n_before} -> {len(y_train)} samples (50/50 in train only)")
 
         print(f"Train: {len(train_df)} images | pos ratio={train_df['target'].mean():.2%}"
-              + (f" | SVM train vectors={len(y_train)} pos={y_train.mean():.2%}" if TRAIN_BALANCE == "balanced" else ""))
+              + (f" | classifier train vectors={len(y_train)} pos={y_train.mean():.2%}"
+                 if TRAIN_BALANCE == "balanced" else ""))
         print(f"Val:   {len(val_df)} images | pos ratio={val_df['target'].mean():.2%}")
 
-        print(f"\n--- Training Linear SVM + calibration (class_weight={cw!r}) ---")
-        base_svm = LinearSVC(C=SVM_C, class_weight=cw, random_state=RANDOM_SEED)
-        print(f"    SVM params: C={SVM_C}, class_weight={cw!r}, calibration_cv={CALIBRATION_CV}")
+        if backend == "torch":
+            print(f"\n--- GPU linear head (class_weight={cw!r}) ---")
+            y_pred, y_prob = fit_predict_gpu_linear(
+                X_train,
+                y_train,
+                X_val,
+                device=DEVICE,
+                C=SVM_C,
+                class_weight=cw,
+                seed=RANDOM_SEED + fold,
+                progress_label=clf_label,
+                progress_state=progress_state,
+            )
+        else:
+            print(f"\n--- Linear SVM + calibration (class_weight={cw!r}) ---")
+            report_pct(clf_label, 0, 100, progress_state)
+            base_svm = LinearSVC(C=SVM_C, class_weight=cw, random_state=RANDOM_SEED)
+            svm = CalibratedClassifierCV(
+                base_svm,
+                method="sigmoid",
+                cv=CALIBRATION_CV,
+            )
+            svm.fit(X_train, y_train)
+            y_pred = svm.predict(X_val)
+            y_prob = svm.predict_proba(X_val)[:, 1]
+            report_pct(clf_label, 100, 100, progress_state)
 
-        svm = CalibratedClassifierCV(
-            base_svm,
-            method="sigmoid",
-            cv=CALIBRATION_CV
-        )
-
-        svm.fit(X_train, y_train)
-
-        y_pred = svm.predict(X_val)
-        y_prob = svm.predict_proba(X_val)[:, 1]
+        report_pct(f"{prefix} run", fold + 1, N_FOLDS, progress_state)
 
         acc = accuracy_score(y_val, y_pred)
 
@@ -475,7 +524,8 @@ def train_and_evaluate_cv() -> dict:
     print("=====================================")
 
     result = {
-        "track": "linear_embedding_svm",
+        "track": "linear_embedding",
+        "classifier_backend": backend,
         "backbone": BACKBONE_NAME,
         "train_balance": TRAIN_BALANCE,
         "class_weight": CLASS_WEIGHT_MODE,
@@ -488,6 +538,7 @@ def train_and_evaluate_cv() -> dict:
             "subset_per_fold": SUBSET_PER_FOLD,
             "svm_c": SVM_C,
             "calibration_cv": CALIBRATION_CV,
+            "classifier_backend": backend,
             "random_seed": RANDOM_SEED,
             "n_folds": N_FOLDS,
         },
@@ -503,7 +554,7 @@ def train_and_evaluate_cv() -> dict:
 def _apply_cli_to_globals(args: argparse.Namespace) -> None:
     global SPLITS_FILE, IMAGE_SIZE, BATCH_SIZE, NUM_WORKERS, PIN_MEMORY
     global N_FOLDS, RANDOM_SEED, SUBSET_PER_FOLD, BACKBONE_NAME, CLASSIFIER_TAG, EMB_ROOT
-    global SVM_C, CALIBRATION_CV, TRAIN_BALANCE, CLASS_WEIGHT_MODE, OUTPUT_DIR
+    global SVM_C, CALIBRATION_CV, TRAIN_BALANCE, CLASS_WEIGHT_MODE, CLASSIFIER_BACKEND, OUTPUT_DIR
 
     SPLITS_FILE = args.splits_file
     IMAGE_SIZE = args.image_size
@@ -520,6 +571,7 @@ def _apply_cli_to_globals(args: argparse.Namespace) -> None:
     CALIBRATION_CV = args.calibration_cv
     TRAIN_BALANCE = args.train_balance
     CLASS_WEIGHT_MODE = args.class_weight
+    CLASSIFIER_BACKEND = args.classifier_backend
     OUTPUT_DIR = args.output_dir or ""
 
 
@@ -557,6 +609,12 @@ def parse_args() -> argparse.Namespace:
         help="LinearSVC class_weight (independent of train-balance).",
     )
     p.add_argument(
+        "--classifier-backend",
+        choices=("auto", "torch", "sklearn"),
+        default=CLASSIFIER_BACKEND,
+        help="auto=torch on CUDA, sklearn on CPU; torch=GPU linear head on embeddings.",
+    )
+    p.add_argument(
         "--output-dir",
         default="",
         help="If set, write metrics.json, metrics.csv, summary.csv here.",
@@ -569,6 +627,7 @@ if __name__ == "__main__":
     print(
         f"\nLinear run -> backbone={BACKBONE_NAME} | img={IMAGE_SIZE} | batch={BATCH_SIZE} "
         f"| workers={NUM_WORKERS} | subset_per_fold={SUBSET_PER_FOLD}"
-        f"\n  train_balance={TRAIN_BALANCE} | class_weight={CLASS_WEIGHT_MODE}\n"
+        f"\n  train_balance={TRAIN_BALANCE} | class_weight={CLASS_WEIGHT_MODE}"
+        f" | classifier_backend={_resolve_classifier_backend()}\n"
     )
     train_and_evaluate_cv()
