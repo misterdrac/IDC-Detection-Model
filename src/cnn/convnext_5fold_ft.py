@@ -318,6 +318,25 @@ def fmt(m: dict) -> str:
 def fmt_cm(m: dict) -> str:
     return f"CM: [[TN={m['tn']}, FP={m['fp']}], [FN={m['fn']}, TP={m['tp']}]]"
 
+_EPOCH_METRIC_KEYS = (
+    "pr_auc", "roc_auc", "accuracy", "balanced_accuracy",
+    "precision", "recall", "f1", "specificity", "sensitivity",
+)
+
+def record_epoch(
+    history: List[Dict],
+    phase: str,
+    epoch: int,
+    metrics: Dict,
+    train_loss: float | None = None,
+) -> None:
+    row: Dict = {"phase": phase, "epoch": int(epoch)}
+    if train_loss is not None:
+        row["train_loss"] = float(train_loss)
+    for k in _EPOCH_METRIC_KEYS:
+        row[k] = metrics.get(k)
+    history.append(row)
+
 
 # TRAIN LOOP (adaptive bs + grad accumulation + visible progress)
 
@@ -448,18 +467,18 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
           f"accum={cfg.grad_accum_steps} | amp={cfg.amp}")
     print(f"pos_weight={pos_weight.item():.3f} | thr={cfg.threshold}")
 
-    # Initial eval
-    init_m = evaluate(model, val_loader, cfg.threshold)
-    print("[Init] " + fmt(init_m))
-    print("       " + fmt_cm(init_m))
-
     best_pr = -1.0
     best_state = None
     best_tag = ""
+    epoch_history: List[Dict] = []
 
-    
+    init_m = evaluate(model, val_loader, cfg.threshold)
+    record_epoch(epoch_history, "Init", 0, init_m)
+    print("[Init] " + fmt(init_m))
+    print("       " + fmt_cm(init_m))
+
     # HEAD TRAIN
-    
+
     for ep in range(1, cfg.head_epochs + 1):
         loss, bs = train_one_epoch_adaptive(
             model, train_ds, bs, optimizer, scaler, criterion,
@@ -469,6 +488,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
 
         if cfg.eval_every and (ep % cfg.eval_every == 0):
             m = evaluate(model, val_loader, cfg.threshold)
+            record_epoch(epoch_history, "HEAD", ep, m, train_loss=loss)
             print("   " + fmt(m))
             print("   " + fmt_cm(m))
             if m["pr_auc"] > best_pr:
@@ -493,6 +513,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
 
             if cfg.eval_every and (ep % cfg.eval_every == 0):
                 m = evaluate(model, val_loader, cfg.threshold)
+                record_epoch(epoch_history, "FT", ep, m, train_loss=loss)
                 print("   " + fmt(m))
                 print("   " + fmt_cm(m))
                 if m["pr_auc"] > best_pr:
@@ -504,6 +525,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
         model.load_state_dict(best_state)
 
     final_m = evaluate(model, val_loader, cfg.threshold)
+    record_epoch(epoch_history, "Final", -1, final_m)
 
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
     ckpt_path = os.path.join(
@@ -540,6 +562,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
         "pos_weight": float(pos_weight.item()),
         "best_tag": best_tag,
         "best_pr": float(best_pr),
+        "epoch_history": epoch_history,
         "checkpoint": ckpt_path,
         **final_m
     }
