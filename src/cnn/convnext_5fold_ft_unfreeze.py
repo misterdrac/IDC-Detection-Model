@@ -1,12 +1,12 @@
-# train_convnext_tiny_5fold_lite.py
-# ConvNeXt Tiny 5-fold finetune (GPU-only) with:
-# - visible progress (tqdm) + heartbeat logs
-# - adaptive batch size on CUDA OOM
-# - AMP (new torch.amp API)
-# - class imbalance handling via pos_weight (BCEWithLogitsLoss)
-# - per-fold metrics + final summary
-# Run:  python3 src/cnn/convnext_5fold_ft.py
-
+# ConvNeXt Tiny 5-fold fine-tune — prošireno odmrzavanje backbonea (Faza 2d)
+#
+# Ista logika kao convnext_5fold_ft.py, ali FT faza odmrzava zadnjih N stageova
+# model.features (ne samo zadnji). HEAD faza = samo classifier.
+#
+# Run (VM, bez mijenjanja glavne skripte):
+#   python3 src/cnn/convnext_5fold_ft_unfreeze.py
+#
+# CFG: ft_unfreeze_stages — 1 = kao FINAL (samo features[-1]), 2 = zadnja 2, 4 = sve stage blokove
 import os
 import gc
 import sys
@@ -42,56 +42,47 @@ from sklearn.metrics import (
 )
 
 
-# CONFIG (edit here - no CLI args)
-# Phase 2 — see FAZA2B.md (active) / THESIS_WORKBOOK.md §7 (journal)
+# CONFIG — Faza 2d (odmrzavanje). Baza = FINAL iz 2a; ne diraj convnext_5fold_ft.py za 2b.
 #
-# Phase 2a (završeno): grid rezolucije, schedule, LR/WD/pw → FINAL PR 0,871
-# Phase 2b (u tijeku): jači parametri — batch, LR raspon; baza = FINAL ispod
-#
-# Trenutni run: F2 — batch_size 16 (jedina promjena vs FINAL)
+# ft_unfreeze_stages: koliko zadnjih blokova u model.features odmrznuti u FT fazi
+#   1 → isto kao glavna skripta (samo zadnji stage)
+#   2 → U2 (preporuka za prvi run)
+#   4 → gotovo cijeli backbone (sporije, više VRAM — probaj batch_size=16)
 
 @dataclass
 class CFG:
     csv_path: str = "breast_cancer_5fold_patient_splits.csv"
     n_folds: int = 5
 
-    # Speed/VRAM knobs — F2: smanjen batch (FINAL=32)
-    image_size: int = 256           # FINAL (2a); ne mijenjati u 2b osim novog bloka
-    batch_size: int = 16            # F2: 16 | FINAL=32 | F3=8 | F4: 16+accum2
+    image_size: int = 256
+    batch_size: int = 32            # smanji na 16 ako OOM kod ft_unfreeze_stages>=2
     min_batch_size: int = 8
-    grad_accum_steps: int = 1       # F4: 2 (efektivni batch 32, drugačija dinamika)
+    grad_accum_steps: int = 1
 
     num_workers: int = 8
     pin_memory: bool = True
 
-    # Training
     seed: int = 42
     amp: bool = True
 
-    # Schedule — FINAL (2a)
     head_epochs: int = 3
     ft_epochs: int = 5
-    finetune_last_stage: bool = True
+    ft_unfreeze_stages: int = 2     # U2: zadnja 2 stagea | U1=1 | U4=4
 
-    # Optimizer — FINAL; 2b Blok G mijenja LR (veći koraci nego C3)
-    lr_head: float = 1e-3           # G2: 5e-4 | G3: lr_bb 5e-6
+    lr_head: float = 1e-3
     lr_backbone: float = 2e-5
-    weight_decay: float = 1e-4      # fiksno (2a: bez dobitka)
+    weight_decay: float = 1e-4
 
-    # Evaluation
     threshold: float = 0.5
     eval_every: int = 1
 
-    # Output
     use_experiment_dirs: bool = True
     phase: str = "phase2_deep_ft"
-    run_tag: str = "phase2b_f2_batch16"
-    out_dir: str = ""                # legacy override; empty = auto
-    ckpt_dir: str = ""               # legacy override; empty = auto
+    run_tag: str = "phase2d_u2_unfreeze2"
+    out_dir: str = ""
+    ckpt_dir: str = ""
 
-    # Heartbeat
     heartbeat_sec: int = 15
-
 
 cfg = CFG()
 
@@ -121,7 +112,7 @@ def _append_manifest_entry(run_id: str, summary: dict) -> None:
         {
             "phase": cfg.phase,
             "run_id": run_id,
-            "started_via": "src/cnn/convnext_5fold_ft.py",
+            "started_via": "src/cnn/convnext_5fold_ft_unfreeze.py",
             "finished_at_utc": utc_now_iso(),
             "run_tag": cfg.run_tag,
             "image_size": cfg.image_size,
@@ -221,20 +212,23 @@ def build_convnext_tiny_binary() -> nn.Module:
     m.classifier[2] = nn.Linear(in_features, 1)  # binary logit
     return m
 
-def set_trainable(model: nn.Module, finetune_last_stage: bool):
-    # freeze all
+def set_trainable(model: nn.Module, ft_unfreeze_stages: int) -> List[int]:
+    """ft_unfreeze_stages=0 → samo head; N>0 → head + zadnjih N blokova u model.features."""
     for p in model.parameters():
         p.requires_grad = False
 
-    # head always trainable
     for p in model.classifier.parameters():
         p.requires_grad = True
 
-    if finetune_last_stage:
-        # unfreeze last stage of ConvNeXt features
-        for p in model.features[-1].parameters():
-            p.requires_grad = True
-
+    unfrozen: List[int] = []
+    if ft_unfreeze_stages > 0:
+        n_blocks = len(model.features)
+        start = max(0, n_blocks - ft_unfreeze_stages)
+        for i in range(start, n_blocks):
+            for p in model.features[i].parameters():
+                p.requires_grad = True
+            unfrozen.append(i)
+    return unfrozen
 def build_optimizer(model: nn.Module) -> torch.optim.Optimizer:
     backbone_params, head_params = [], []
     for name, p in model.named_parameters():
@@ -431,8 +425,8 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
 
     model = build_convnext_tiny_binary().to(DEVICE)
 
-    # Phase 1: head only
-    set_trainable(model, finetune_last_stage=False)
+    # Phase 1: head only (backbone frozen)
+    unfrozen_idx = set_trainable(model, ft_unfreeze_stages=0)
     optimizer = build_optimizer(model)
     scaler = torch.amp.GradScaler("cuda", enabled=cfg.amp)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -447,6 +441,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
     print(f"img={cfg.image_size} | start_bs={cfg.batch_size} | min_bs={cfg.min_batch_size} | "
           f"accum={cfg.grad_accum_steps} | amp={cfg.amp}")
     print(f"pos_weight={pos_weight.item():.3f} | thr={cfg.threshold}")
+    print(f"ft_unfreeze_stages={cfg.ft_unfreeze_stages} (0=HEAD only; FT odmrzava zadnjih N features blokova)")
 
     # Initial eval
     init_m = evaluate(model, val_loader, cfg.threshold)
@@ -477,10 +472,11 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
                 best_tag = f"HEAD_ep{ep}"
 
     
-    # FINETUNE LAST STAGE
-    
-    if cfg.finetune_last_stage and cfg.ft_epochs > 0:
-        set_trainable(model, finetune_last_stage=True)
+    # FINETUNE — odmrzni zadnjih ft_unfreeze_stages blokova backbonea
+
+    if cfg.ft_epochs > 0 and cfg.ft_unfreeze_stages > 0:
+        unfrozen_idx = set_trainable(model, ft_unfreeze_stages=cfg.ft_unfreeze_stages)
+        print(f"[Fold {fold}] FT unfreeze features indices: {unfrozen_idx} (of {len(model.features)} blocks)")
         optimizer = build_optimizer(model)  # rebuild with backbone lr
         scaler = torch.amp.GradScaler("cuda", enabled=cfg.amp)
 
@@ -528,7 +524,8 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
         "grad_accum_steps": int(cfg.grad_accum_steps),
         "head_epochs": int(cfg.head_epochs),
         "ft_epochs": int(cfg.ft_epochs),
-        "finetune_last_stage": bool(cfg.finetune_last_stage),
+        "ft_unfreeze_stages": int(cfg.ft_unfreeze_stages),
+        "ft_unfrozen_feature_indices": unfrozen_idx,
         "lr_head": float(cfg.lr_head),
         "lr_backbone": float(cfg.lr_backbone),
         "weight_decay": float(cfg.weight_decay),
@@ -572,7 +569,7 @@ def main():
 
     print("\nRUN CONFIG:")
     print(f"image_size={cfg.image_size} | start_bs={cfg.batch_size} | min_bs={cfg.min_batch_size} | accum={cfg.grad_accum_steps}")
-    print(f"head_epochs={cfg.head_epochs} | ft_epochs={cfg.ft_epochs} | finetune_last_stage={cfg.finetune_last_stage}")
+    print(f"head_epochs={cfg.head_epochs} | ft_epochs={cfg.ft_epochs} | ft_unfreeze_stages={cfg.ft_unfreeze_stages}")
     print(f"lr_head={cfg.lr_head} | lr_backbone={cfg.lr_backbone} | wd={cfg.weight_decay}")
     print(f"amp={cfg.amp} | workers={cfg.num_workers} | threshold={cfg.threshold}")
     if run_id:
