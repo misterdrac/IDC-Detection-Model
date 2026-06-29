@@ -48,44 +48,38 @@ from sklearn.metrics import (
 # Phase 2a (završeno): grid rezolucije, schedule, LR/WD/pw → FINAL PR 0,871
 # Phase 2b (u tijeku): jači parametri — batch, LR raspon; baza = FINAL ispod
 #
-# Trenutni run: F2 — batch_size 16 (jedina promjena vs FINAL)
+# Trenutni run: FINAL referenca (2d ide u convnext_5fold_ft_unfreeze.py)
 
 @dataclass
 class CFG:
     csv_path: str = "breast_cancer_5fold_patient_splits.csv"
     n_folds: int = 5
 
-    # Speed/VRAM knobs — F2: smanjen batch (FINAL=32)
-    image_size: int = 256           # FINAL (2a); ne mijenjati u 2b osim novog bloka
-    batch_size: int = 16            # F2: 16 | FINAL=32 | F3=8 | F4: 16+accum2
+    image_size: int = 256
+    batch_size: int = 32
     min_batch_size: int = 8
-    grad_accum_steps: int = 1       # F4: 2 (efektivni batch 32, drugačija dinamika)
+    grad_accum_steps: int = 1
 
     num_workers: int = 8
     pin_memory: bool = True
 
-    # Training
     seed: int = 42
     amp: bool = True
 
-    # Schedule — FINAL (2a)
     head_epochs: int = 3
     ft_epochs: int = 5
     finetune_last_stage: bool = True
 
-    # Optimizer — FINAL; 2b Blok G mijenja LR (veći koraci nego C3)
-    lr_head: float = 1e-3           # G2: 5e-4 | G3: lr_bb 5e-6
+    lr_head: float = 1e-3
     lr_backbone: float = 2e-5
-    weight_decay: float = 1e-4      # fiksno (2a: bez dobitka)
+    weight_decay: float = 1e-4
 
-    # Evaluation
     threshold: float = 0.5
     eval_every: int = 1
 
-    # Output
     use_experiment_dirs: bool = True
     phase: str = "phase2_deep_ft"
-    run_tag: str = "phase2b_f2_batch16"
+    run_tag: str = "korak0_img224"
     out_dir: str = ""                # legacy override; empty = auto
     ckpt_dir: str = ""               # legacy override; empty = auto
 
