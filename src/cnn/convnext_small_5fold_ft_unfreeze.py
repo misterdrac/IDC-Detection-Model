@@ -1,15 +1,10 @@
-# ConvNeXt Tiny 5-fold fine-tune — prošireno odmrzavanje backbonea (Faza 2d)
+# ConvNeXt Small 5-fold fine-tune — cijeli backbone (Faza 3)
 #
-# Ista logika kao convnext_5fold_ft.py, ali FT faza odmrzava zadnjih N stageova
-# model.features (ne samo zadnji). HEAD faza = samo classifier.
+# Nastavak U4 protokola na većoj arhitekturi. HEAD faza = samo classifier;
+# FT faza odmrzava zadnjih N blokova u model.features (8 = cijeli backbone).
 #
-# Run (VM, bez mijenjanja glavne skripte):
-#   python3 src/cnn/convnext_5fold_ft_unfreeze.py
-#
-# CFG: ft_unfreeze_stages — koliko zadnjih blokova u model.features odmrznuti u FT fazi
-#   1 → kao FINAL (samo features[-1])
-#   2 → U2 (zadnja 2)
-#   8 → U4 (cijeli backbone — svi len(features) blokovi, ConvNeXt-Tiny = 8)
+# Run (VM):
+#   python3 src/cnn/convnext_small_5fold_ft_unfreeze.py
 import os
 import gc
 import sys
@@ -45,12 +40,9 @@ from sklearn.metrics import (
 )
 
 
-# CONFIG — Faza 2d (odmrzavanje). Baza = FINAL iz 2a; ne diraj convnext_5fold_ft.py za 2b.
+# CONFIG — Faza 3 (ConvNeXt-Small, full backbone FT, baza = U4 Tiny)
 #
-# ft_unfreeze_stages: koliko zadnjih blokova u model.features odmrznuti u FT fazi
-#   1 → isto kao glavna skripta (samo zadnji stage)
-#   2 → U2
-#   8 → U4 cijeli backbone (ConvNeXt-Tiny: len(features)=8)
+# ConvNeXt-Small: len(model.features) = 8 (isto kao Tiny, više kanala → više VRAM-a)
 
 @dataclass
 class CFG:
@@ -58,9 +50,9 @@ class CFG:
     n_folds: int = 5
 
     image_size: int = 256
-    batch_size: int = 16            # U4: smanjen zbog VRAM-a (OOM → auto pad na 8)
-    min_batch_size: int = 8
-    grad_accum_steps: int = 2       # efektivni batch 32 kao U2/FINAL
+    batch_size: int = 8             # manji od Tiny U4 zbog VRAM-a
+    min_batch_size: int = 4
+    grad_accum_steps: int = 4       # efektivni batch 32
 
     num_workers: int = 8
     pin_memory: bool = True
@@ -70,7 +62,7 @@ class CFG:
 
     head_epochs: int = 3
     ft_epochs: int = 5
-    ft_unfreeze_stages: int = 8     # U4: cijeli backbone | U2=2 | FINAL=1
+    ft_unfreeze_stages: int = 8     # cijeli backbone
 
     lr_head: float = 1e-3
     lr_backbone: float = 2e-5
@@ -78,10 +70,11 @@ class CFG:
 
     threshold: float = 0.5
     eval_every: int = 1
+    val_batch_size: int = 32
 
     use_experiment_dirs: bool = True
-    phase: str = "phase2_deep_ft"
-    run_tag: str = "phase2d_u4_unfreeze4"
+    phase: str = "phase3_convnext_small"
+    run_tag: str = "small_full_ft_u4"
     out_dir: str = ""
     ckpt_dir: str = ""
 
@@ -98,7 +91,7 @@ def resolve_output_dirs(c: CFG) -> tuple[str, str, str | None]:
     from experiments.lib.experiment_paths import ensure_phase_dirs, make_ft_run_id, run_dir
 
     ensure_phase_dirs(c.phase)
-    run_id = make_ft_run_id(c.phase, c.run_tag, c.image_size, backbone="convnext_tiny")
+    run_id = make_ft_run_id(c.phase, c.run_tag, c.image_size, backbone="convnext_small")
     base = run_dir(c.phase, run_id)
     ckpt = base / "checkpoints"
     base.mkdir(parents=True, exist_ok=True)
@@ -115,7 +108,7 @@ def _append_manifest_entry(run_id: str, summary: dict) -> None:
         {
             "phase": cfg.phase,
             "run_id": run_id,
-            "started_via": "src/cnn/convnext_5fold_ft_unfreeze.py",
+            "started_via": "src/cnn/convnext_small_5fold_ft_unfreeze.py",
             "finished_at_utc": utc_now_iso(),
             "run_tag": cfg.run_tag,
             "image_size": cfg.image_size,
@@ -209,8 +202,8 @@ def make_loader(ds: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
 
 # MODEL
 
-def build_convnext_tiny_binary() -> nn.Module:
-    m = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1)
+def build_convnext_small_binary() -> nn.Module:
+    m = models.convnext_small(weights=models.ConvNeXt_Small_Weights.IMAGENET1K_V1)
     in_features = m.classifier[2].in_features
     m.classifier[2] = nn.Linear(in_features, 1)  # binary logit
     return m
@@ -445,9 +438,9 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
     val_ds = PatchDataset(val_df, val_tfm)
 
     # Val loader can be bigger
-    val_loader = make_loader(val_ds, batch_size=max(64, cfg.batch_size), shuffle=False)
+    val_loader = make_loader(val_ds, batch_size=cfg.val_batch_size, shuffle=False)
 
-    model = build_convnext_tiny_binary().to(DEVICE)
+    model = build_convnext_small_binary().to(DEVICE)
 
     # Phase 1: head only (backbone frozen)
     unfrozen_idx = set_trainable(model, ft_unfreeze_stages=0)
@@ -532,7 +525,7 @@ def run_fold(df: pd.DataFrame, fold: int) -> Dict:
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
     ckpt_path = os.path.join(
         cfg.ckpt_dir,
-        f"convnext_tiny_fold{fold}_img{cfg.image_size}_bs{bs}_{best_tag}.pth"
+        f"convnext_small_fold{fold}_img{cfg.image_size}_bs{bs}_{best_tag}.pth"
     )
     torch.save(model.state_dict(), ckpt_path)
 
@@ -597,7 +590,8 @@ def main():
     print(df["fold"].value_counts().sort_index().to_string())
 
     print("\nRUN CONFIG:")
-    print(f"image_size={cfg.image_size} | start_bs={cfg.batch_size} | min_bs={cfg.min_batch_size} | accum={cfg.grad_accum_steps}")
+    print(f"model=convnext_small | image_size={cfg.image_size} | start_bs={cfg.batch_size} | "
+          f"min_bs={cfg.min_batch_size} | accum={cfg.grad_accum_steps}")
     print(f"head_epochs={cfg.head_epochs} | ft_epochs={cfg.ft_epochs} | ft_unfreeze_stages={cfg.ft_unfreeze_stages}")
     print(f"lr_head={cfg.lr_head} | lr_backbone={cfg.lr_backbone} | wd={cfg.weight_decay}")
     print(f"amp={cfg.amp} | workers={cfg.num_workers} | threshold={cfg.threshold}")
@@ -635,16 +629,16 @@ def main():
     runtime_min = (time.time() - start) / 60.0
     print(f"\nRuntime: {runtime_min:.2f} min")
 
-    csv_out = os.path.join(cfg.out_dir, f"convnext_tiny_5fold_img{cfg.image_size}.csv")
+    csv_out = os.path.join(cfg.out_dir, f"convnext_small_5fold_img{cfg.image_size}.csv")
     out_df.to_csv(csv_out, index=False)
     out_df.to_csv(os.path.join(cfg.out_dir, "metrics.csv"), index=False)
 
-    summary_out = os.path.join(cfg.out_dir, f"convnext_tiny_5fold_img{cfg.image_size}_summary.json")
+    summary_out = os.path.join(cfg.out_dir, f"convnext_small_5fold_img{cfg.image_size}_summary.json")
     summary = {
         "run_id": run_id,
         "run_tag": cfg.run_tag,
         "phase": cfg.phase,
-        "model": "convnext_tiny_binary",
+        "model": "convnext_small_binary",
         "config": cfg.__dict__,
         "results_csv": csv_out,
         "metrics_mean_std": {c: {"mean": float(out_df[c].mean()), "std": float(out_df[c].std(ddof=0))} for c in cols},
@@ -673,7 +667,7 @@ def main():
     print("Saved JSON:", summary_out)
     print("Metrics   :", os.path.join(cfg.out_dir, "metrics.csv"), "|", os.path.join(cfg.out_dir, "metrics.json"))
     if run_id:
-        print("Aggregate : python3 experiments/phase2_deep_ft/aggregate_results.py")
+        print("Aggregate : python3 experiments/phase3_convnext_small/aggregate_results.py")
     print("Done ")
 
 if __name__ == "__main__":
