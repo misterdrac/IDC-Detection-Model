@@ -6,7 +6,10 @@
 # Run (VM, bez mijenjanja glavne skripte):
 #   python3 src/cnn/convnext_5fold_ft_unfreeze.py
 #
-# CFG: ft_unfreeze_stages — 1 = kao FINAL (samo features[-1]), 2 = zadnja 2, 4 = sve stage blokove
+# CFG: ft_unfreeze_stages — koliko zadnjih blokova u model.features odmrznuti u FT fazi
+#   1 → kao FINAL (samo features[-1])
+#   2 → U2 (zadnja 2)
+#   8 → U4 (cijeli backbone — svi len(features) blokovi, ConvNeXt-Tiny = 8)
 import os
 import gc
 import sys
@@ -46,8 +49,8 @@ from sklearn.metrics import (
 #
 # ft_unfreeze_stages: koliko zadnjih blokova u model.features odmrznuti u FT fazi
 #   1 → isto kao glavna skripta (samo zadnji stage)
-#   2 → U2 (preporuka za prvi run)
-#   4 → gotovo cijeli backbone (sporije, više VRAM — probaj batch_size=16)
+#   2 → U2
+#   8 → U4 cijeli backbone (ConvNeXt-Tiny: len(features)=8)
 
 @dataclass
 class CFG:
@@ -55,9 +58,9 @@ class CFG:
     n_folds: int = 5
 
     image_size: int = 256
-    batch_size: int = 32            # smanji na 16 ako OOM kod ft_unfreeze_stages>=2
+    batch_size: int = 16            # U4: smanjen zbog VRAM-a (OOM → auto pad na 8)
     min_batch_size: int = 8
-    grad_accum_steps: int = 1
+    grad_accum_steps: int = 2       # efektivni batch 32 kao U2/FINAL
 
     num_workers: int = 8
     pin_memory: bool = True
@@ -67,7 +70,7 @@ class CFG:
 
     head_epochs: int = 3
     ft_epochs: int = 5
-    ft_unfreeze_stages: int = 2     # U2: zadnja 2 stagea | U1=1 | U4=4
+    ft_unfreeze_stages: int = 8     # U4: cijeli backbone | U2=2 | FINAL=1
 
     lr_head: float = 1e-3
     lr_backbone: float = 2e-5
@@ -78,7 +81,7 @@ class CFG:
 
     use_experiment_dirs: bool = True
     phase: str = "phase2_deep_ft"
-    run_tag: str = "phase2d_u2_unfreeze2"
+    run_tag: str = "phase2d_u4_unfreeze4"
     out_dir: str = ""
     ckpt_dir: str = ""
 
@@ -213,7 +216,8 @@ def build_convnext_tiny_binary() -> nn.Module:
     return m
 
 def set_trainable(model: nn.Module, ft_unfreeze_stages: int) -> List[int]:
-    """ft_unfreeze_stages=0 → samo head; N>0 → head + zadnjih N blokova u model.features."""
+    """ft_unfreeze_stages=0 → samo head; N>0 → head + zadnjih N blokova u model.features.
+    Ako N >= len(features), odmrzava se cijeli backbone (U4)."""
     for p in model.parameters():
         p.requires_grad = False
 
@@ -223,7 +227,8 @@ def set_trainable(model: nn.Module, ft_unfreeze_stages: int) -> List[int]:
     unfrozen: List[int] = []
     if ft_unfreeze_stages > 0:
         n_blocks = len(model.features)
-        start = max(0, n_blocks - ft_unfreeze_stages)
+        n_unfreeze = min(ft_unfreeze_stages, n_blocks)
+        start = max(0, n_blocks - n_unfreeze)
         for i in range(start, n_blocks):
             for p in model.features[i].parameters():
                 p.requires_grad = True
