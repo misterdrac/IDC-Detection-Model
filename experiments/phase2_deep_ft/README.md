@@ -1,25 +1,27 @@
-# Phase 2 — deep fine-tuning (planned)
+# Phase 2 — deep fine-tuning (ConvNeXt-Tiny)
 
-**Prerequisite:** Phase 1 complete; identify best model per data regime from
-`reports/experiments/phase1_balance/comparison_latest.csv`.
+**Status:** completed (2a–2d) · winner **U4** PR **0.900**
 
-## Goal
+**Notes:** [`PHASE2B.md`](../../progress_tracker/PHASE2B.md) · [`PHASE2C.md`](../../progress_tracker/PHASE2C.md) · [`PHASE2D.md`](../../progress_tracker/PHASE2D.md)  
+**VM paths:** [`DOCUMENTATION.md`](../../progress_tracker/DOCUMENTATION.md) § Paths
 
-Go deeper into hyperparameter blocks for the top 1–2 setups (natural train vs balanced train), not just light head+last-stage FT.
+```bash
+# 2a–2c (last-stage FT)
+python3 src/cnn/convnext_5fold_ft.py
 
-## Suggested search blocks (ConvNeXt-Tiny FT)
+# 2d (extended / full unfreeze)
+python3 src/cnn/convnext_5fold_ft_unfreeze.py
 
-| Block | Knobs |
-|-------|--------|
-| Optimizer | `lr_head`, `lr_backbone`, `weight_decay` |
-| Schedule | `head_epochs`, `ft_epochs`, `finetune_last_stage` |
-| Imbalance | `use_pos_weight`, `train_balance` (balanced sampler) |
-| Resolution / batch | `image_size`, `batch_size`, `grad_accum_steps` |
+python3 experiments/phase2_deep_ft/aggregate_results.py
+```
 
-## Implementation status
+**One run → folder:**
 
-- [ ] Add CLI to `src/cnn/convnext_5fold_ft.py` (mirror linear script flags)
-- [ ] `experiments/phase2_deep_ft/run_grid.py` — grid over blocks, same logging as phase 1
-- [ ] Auto-select finalists from phase 1 comparison CSV
+```text
+experiments/results/phase2_deep_ft/phase2_deep_ft_convnext_tiny_<run_tag>_<TIMESTAMP>Z/
+  metrics.json    ← paste for analysis
+  metrics.csv
+  checkpoints/
+```
 
-Until implemented, run ConvNeXt manually and copy metrics into `reports/experiments/phase2_deep_ft/`.
+**Aggregate:** `reports/experiments/phase2_deep_ft/comparison_latest.csv`

@@ -43,7 +43,7 @@ from sklearn.metrics import (
 
 
 # CONFIG (edit here - no CLI args)
-# Phase 2 — see FAZA2B.md (active) / THESIS_WORKBOOK.md §7 (journal)
+# Phase 2 — see progress_tracker/PHASE2B.md / THESIS_WORKBOOK.md §7 (journal)
 #
 # Phase 2a (završeno): grid rezolucije, schedule, LR/WD/pw → FINAL PR 0,871
 # Phase 2b (u tijeku): jači parametri — batch, LR raspon; baza = FINAL ispod

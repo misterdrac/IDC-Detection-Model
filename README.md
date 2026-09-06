@@ -2,7 +2,7 @@
 
 Breast histopathology pipeline for **invasive ductal carcinoma (IDC)** detection: patient-level 5-fold CV, linear embeddings + SVM, and ConvNeXt-Tiny fine-tuning.
 
-**VM workflow:** `experiments/README.md` and per-phase READMEs. Local plan: `.docs/AGENDA.md` (gitignored).
+**VM workflow:** `experiments/README.md`. **Progress tracker:** [`progress_tracker/DOCUMENTATION.md`](progress_tracker/DOCUMENTATION.md) · workbook §7 (local): `progress_tracker/THESIS_WORKBOOK.md`.
 
 ---
 
